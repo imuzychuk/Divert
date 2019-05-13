@@ -44,6 +44,33 @@
 #include "windivert_device.h"
 
 /*
+ * Guardicore
+ * Declare required callouts
+ */
+#if (NTDDI_VERSION < 0x06020000)
+
+// effb7edb-0055-4f9a-a23a-4ff8131ad191
+DEFINE_GUID(
+   FWPM_LAYER_INBOUND_MAC_FRAME_ETHERNET,
+   0xeffb7edb,
+   0x0055,
+   0x4f9a,
+   0xa2, 0x31, 0x4f, 0xf8, 0x13, 0x1a, 0xd1, 0x91
+);
+
+// 694673bc-d6db-4870-adee-0acdbdb7f4b2
+DEFINE_GUID(
+   FWPM_LAYER_OUTBOUND_MAC_FRAME_ETHERNET,
+   0x694673bc,
+   0xd6db,
+   0x4870,
+   0xad, 0xee, 0x0a, 0xcd, 0xbd, 0xb7, 0xf4, 0xb2
+);
+
+#endif
+
+
+/*
  * WDK function declaration cruft.
  */
 DRIVER_INITIALIZE DriverEntry;
@@ -59,7 +86,7 @@ EVT_WDF_WORKITEM windivert_worker;
 /*
  * Debugging macros.
  */
-// #define DEBUG_ON
+#define DEBUG_ON
 #define DEBUG_BUFSIZE       256
 
 #ifdef DEBUG_ON
@@ -127,6 +154,11 @@ typedef struct filter_s *filter_t;
 #define WINDIVERT_CONTEXT_INBOUND_IPV4_LAYER    1
 #define WINDIVERT_CONTEXT_OUTBOUND_IPV6_LAYER   2
 #define WINDIVERT_CONTEXT_INBOUND_IPV6_LAYER    3
+/*
+ * Guardicore
+ * Max data link layers
+ */
+#define WINDIVERT_CONTEXT_MAX_DATA_LINK_LAYERS  2
 typedef enum
 {
     WINDIVERT_CONTEXT_STATE_OPENING = 0xA0,     // Context is opening.
@@ -164,6 +196,7 @@ struct context_s
     BOOL installed[WINDIVERT_CONTEXT_MAXLAYERS];
                                                 // What is installed?
     BOOL on;                                    // Is filtering on?
+    BOOL arp_sniff_only;                        // Only sniff ARP packets?
     HANDLE engine_handle;                       // WFP engine handle.
     filter_t filter;                            // Packet filter.
 };
@@ -370,6 +403,22 @@ static BOOL windivert_filter_test(filter_t filter, UINT16 ip, UINT8 protocol,
     UINT8 field, UINT32 arg);
 
 /*
+ * Guardicore
+ * Data link callouts
+ */
+static NTSTATUS windivert_install_data_link_callouts(context_t context);
+static void windivert_classify_inbound_mac_frame_ethernet_callout(
+    IN const FWPS_INCOMING_VALUES0 *fixed_vals,
+    IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
+    const FWPS_FILTER0 *filter, IN UINT64 flow_context,
+    OUT FWPS_CLASSIFY_OUT0 *result);
+static void windivert_classify_outbound_mac_frame_ethernet_callout(
+    IN const FWPS_INCOMING_VALUES0 *fixed_vals,
+    IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
+    const FWPS_FILTER0 *filter, IN UINT64 flow_context,
+    OUT FWPS_CLASSIFY_OUT0 *result);
+
+/*
  * WinDivert sublayer GUIDs
  */
 DEFINE_GUID(WINDIVERT_SUBLAYER_INBOUND_IPV4_GUID,
@@ -390,6 +439,17 @@ DEFINE_GUID(WINDIVERT_SUBLAYER_FORWARD_IPV4_GUID,
 DEFINE_GUID(WINDIVERT_SUBLAYER_FORWARD_IPV6_GUID,
     0xE70D0973, 0x935F, 0x4790,
     0x8E, 0x64, 0xF7, 0xF7, 0x36, 0x27, 0xA5, 0x8F);
+
+/*
+ * Guardicore
+ * WinDivert sublaers GUIDs for ARP sniffer
+ */
+DEFINE_GUID(WINDIVERT_SUBLAYER_INBOUND_MAC_FRAME_ETHERNET_GUID,
+    0x09C95395, 0x790A, 0x41FB,
+    0xA7, 0x46, 0x78, 0xB7, 0xEC, 0x1B, 0x92, 0x36);
+DEFINE_GUID(WINDIVERT_SUBLAYER_OUTBOUND_MAC_FRAME_ETHERNET_GUID,
+    0x211F4205, 0x262F, 0x423D,
+    0x97, 0xDE, 0x4A, 0xD7, 0x31, 0xDF, 0x0F, 0x32);
 
 /*
  * WinDivert supported layers.
@@ -478,6 +538,34 @@ static struct layer_s layer_forward_network_ipv6_0 =
 };
 static layer_t layer_forward_network_ipv6 = &layer_forward_network_ipv6_0;
 
+static struct layer_s layer_inbound_mac_frame_ethernet_0 =
+{
+    L"" WINDIVERT_DEVICE_NAME L"_SubLayerInboundMacFrameEthernet",
+    L"" WINDIVERT_DEVICE_NAME L" sublayer data link (inbound mac frame ethernet)",
+    L"" WINDIVERT_DEVICE_NAME L"_CalloutInboundMacFrameEthernet",
+    L"" WINDIVERT_DEVICE_NAME L" callout data link (inbound mac frame ethernet)",
+    L"" WINDIVERT_DEVICE_NAME L"_FilterInboundMacFrameEthernet",
+    L"" WINDIVERT_DEVICE_NAME L" filter data link (inbound mac frame ethernet)",
+    {0},
+    {0},
+    windivert_classify_inbound_mac_frame_ethernet_callout,
+};
+static layer_t layer_inbound_mac_frame_ethernet = &layer_inbound_mac_frame_ethernet_0;
+
+static struct layer_s layer_outbound_mac_frame_ethernet_0 =
+{
+    L"" WINDIVERT_DEVICE_NAME L"_SubLayerOutboundMacFrameEthernet",
+    L"" WINDIVERT_DEVICE_NAME L" sublayer data link (outbound mac frame ethernet)",
+    L"" WINDIVERT_DEVICE_NAME L"_CalloutOutboundMacFrameEthernet",
+    L"" WINDIVERT_DEVICE_NAME L" callout data link (outbound mac frame ethernet)",
+    L"" WINDIVERT_DEVICE_NAME L"_FilterOutboundMacFrameEthernet",
+    L"" WINDIVERT_DEVICE_NAME L" filter data link (outbound mac frame ethernet)",
+    {0},
+    {0},
+    windivert_classify_outbound_mac_frame_ethernet_callout,
+};
+static layer_t layer_outbound_mac_frame_ethernet = &layer_outbound_mac_frame_ethernet_0;
+
 /*
  * WinDivert malloc/free.
  */
@@ -555,6 +643,15 @@ extern NTSTATUS DriverEntry(IN PDRIVER_OBJECT driver_obj,
         WINDIVERT_SUBLAYER_FORWARD_IPV4_GUID;
     layer_forward_network_ipv6->sublayer_guid =
         WINDIVERT_SUBLAYER_FORWARD_IPV6_GUID;
+
+    // Guardicore
+    // Initialize the data link layers.
+    layer_inbound_mac_frame_ethernet->layer_guid = FWPM_LAYER_INBOUND_MAC_FRAME_ETHERNET;
+    layer_outbound_mac_frame_ethernet->layer_guid = FWPM_LAYER_OUTBOUND_MAC_FRAME_ETHERNET;
+    layer_inbound_mac_frame_ethernet->sublayer_guid =
+        WINDIVERT_SUBLAYER_INBOUND_MAC_FRAME_ETHERNET_GUID;
+    layer_outbound_mac_frame_ethernet->sublayer_guid =
+        WINDIVERT_SUBLAYER_OUTBOUND_MAC_FRAME_ETHERNET_GUID;
 
     // Configure ourself as a non-PnP driver:
     WDF_DRIVER_CONFIG_INIT(&config, WDF_NO_EVENT_CALLBACK);
@@ -725,6 +822,21 @@ driver_entry_sublayer_error:
     {
         goto driver_entry_sublayer_error;
     }
+    // In case we have Win8 API, we can install data link WPF sublayers
+    if (RtlIsNtDdiVersionAvailable(0x06020000))
+    {
+        DEBUG("Win8 DDI available. Istalling Data Link callouts...");
+        status = windivert_install_sublayer(layer_inbound_mac_frame_ethernet);
+        if (!NT_SUCCESS(status))
+        {
+            goto driver_entry_sublayer_error;
+        }
+        status = windivert_install_sublayer(layer_outbound_mac_frame_ethernet);
+        if (!NT_SUCCESS(status))
+        {
+            goto driver_entry_sublayer_error;
+        }
+    }
     status = FwpmTransactionCommit0(engine_handle);
     if (!NT_SUCCESS(status))
     {
@@ -796,6 +908,15 @@ static void windivert_driver_unload(void)
             &layer_forward_network_ipv4->sublayer_guid);
         FwpmSubLayerDeleteByKey0(engine_handle,
             &layer_forward_network_ipv6->sublayer_guid);
+        // In case we have Win8 API, we must delete data link WPF sublayers
+        if (RtlIsNtDdiVersionAvailable(0x06020000))
+        {
+            DEBUG("Win8 DDI available. Delete Data Link callouts...");
+            FwpmSubLayerDeleteByKey0(engine_handle,
+                &layer_inbound_mac_frame_ethernet->sublayer_guid);
+            FwpmSubLayerDeleteByKey0(engine_handle,
+                &layer_outbound_mac_frame_ethernet->sublayer_guid);
+        }
         status = FwpmTransactionCommit0(engine_handle);
         if (!NT_SUCCESS(status))
         {
@@ -870,6 +991,7 @@ extern VOID windivert_create(IN WDFDEVICE device, IN WDFREQUEST request,
         context->installed[i] = FALSE;
     }
     context->on = FALSE;
+    context->arp_sniff_only = FALSE;
     KeInitializeSpinLock(&context->lock);
     InitializeListHead(&context->work_queue);
     InitializeListHead(&context->packet_queue);
@@ -1002,6 +1124,44 @@ static NTSTATUS windivert_install_callouts(context_t context, UINT8 layer,
             goto windivert_install_callouts_exit;
         }
     }
+
+windivert_install_callouts_exit:
+
+    if (!NT_SUCCESS(status))
+    {
+        windivert_uninstall_callouts(context, WINDIVERT_CONTEXT_STATE_OPEN);
+    }
+
+    return status;
+}
+
+
+/*
+ * Guardicore
+ * Register all Data Link WFP callouts.
+ */
+static NTSTATUS windivert_install_data_link_callouts(context_t context)
+{
+    UINT8 i, j;
+    layer_t layers[WINDIVERT_CONTEXT_MAXLAYERS];
+    NTSTATUS status = STATUS_SUCCESS;
+
+    i = 0;
+    layers[i++] = layer_inbound_mac_frame_ethernet;
+    layers[i++] = layer_outbound_mac_frame_ethernet;
+
+    DEBUG("GC: Installing Data Link callouts (context=%p)", context);
+
+    for (j = 0; j < i; j++)
+    {
+        status = windivert_install_callout(context, j, layers[j]);
+        if (!NT_SUCCESS(status))
+        {
+            goto windivert_install_callouts_exit;
+        }
+    }
+
+    DEBUG("GC: Installed Data Link callouts (context=%p)", context);
 
 windivert_install_callouts_exit:
 
@@ -1235,6 +1395,7 @@ extern VOID windivert_cleanup(IN WDFFILEOBJECT object)
     BOOL sniff_mode, timeout, forward;
     UINT priority;
     NTSTATUS status;
+    BOOL arp_sniff_only;
     
     DEBUG("CLEANUP: cleaning up WinDivert context (context=%p)", context);
 
@@ -1252,6 +1413,7 @@ windivert_cleanup_error:
     sniff_mode = ((context->flags & WINDIVERT_FLAG_SNIFF) != 0);
     forward = (context->layer == WINDIVERT_LAYER_NETWORK_FORWARD);
     priority = context->priority;
+    arp_sniff_only = context->arp_sniff_only;
     while (!IsListEmpty(&context->packet_queue))
     {
         entry = RemoveHeadList(&context->packet_queue);
@@ -1260,7 +1422,7 @@ windivert_cleanup_error:
         context->packet_queue_size -= packet->data_len;
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         timeout = WINDIVERT_TIMEOUT(context, packet->timestamp, timestamp);
-        if (!timeout)
+        if (!timeout && !arp_sniff_only)
         {
             windivert_reinject_packet(packet);
         }
@@ -1282,7 +1444,7 @@ windivert_cleanup_error:
         KeReleaseInStackQueuedSpinLock(&lock_handle);
         work = CONTAINING_RECORD(entry, struct packet_s, entry);
         timeout = WINDIVERT_TIMEOUT(context, work->timestamp, timestamp);
-        if (!timeout)
+        if (!timeout && !arp_sniff_only)
         {
             windivert_reinject_packet(work);
         }
@@ -1886,6 +2048,7 @@ VOID windivert_caller_context(IN WDFDEVICE device, IN WDFREQUEST request)
         case IOCTL_WINDIVERT_SET_FLAGS:
         case IOCTL_WINDIVERT_SET_PARAM:
         case IOCTL_WINDIVERT_GET_PARAM:
+        case IOCTL_WINDIVERT_START_ARP_SNIFF:
             break;
         
         default:
@@ -2180,6 +2343,32 @@ extern VOID windivert_ioctl(IN WDFQUEUE queue, IN WDFREQUEST request,
             KeReleaseInStackQueuedSpinLock(&lock_handle);
             break;
 
+        case IOCTL_WINDIVERT_START_ARP_SNIFF:
+        {
+            // In case we don't have Win8 API, ARP capture is not available  in WPF
+            if (!RtlIsNtDdiVersionAvailable(0x06020000))
+            {
+                status = STATUS_INVALID_DEVICE_REQUEST;
+                goto windivert_ioctl_exit;
+            }
+
+            KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+            if (context->state != WINDIVERT_CONTEXT_STATE_OPEN || context->on)
+            {
+                KeReleaseInStackQueuedSpinLock(&lock_handle);
+                status = STATUS_INVALID_DEVICE_STATE;
+                goto windivert_ioctl_exit;
+            }
+            context->on = TRUE;
+            context->arp_sniff_only = TRUE;
+            context->flags = WINDIVERT_FLAG_SNIFF;
+            KeReleaseInStackQueuedSpinLock(&lock_handle);
+
+            status = windivert_install_data_link_callouts(context);
+
+            break;
+        }
+
         default:
             status = STATUS_INVALID_DEVICE_REQUEST;
             DEBUG_ERROR("failed to complete I/O control; invalid request",
@@ -2323,6 +2512,44 @@ static void windivert_classify_forward_network_v6_callout(
         fixed_vals->incomingValue[
             FWPS_FIELD_IPFORWARD_V6_DESTINATION_INTERFACE_INDEX].value.uint32,
         0, FALSE, FALSE, 0, data, flow_context, result);
+}
+
+/*
+ * Guardicore
+ * WinDivert classify inbound mac frame ethernet callout.
+ */
+static void windivert_classify_inbound_mac_frame_ethernet_callout(
+    IN const FWPS_INCOMING_VALUES0 *fixed_vals,
+    IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
+    const FWPS_FILTER0 *filter, IN UINT64 flow_context,
+    OUT FWPS_CLASSIFY_OUT0 *result)
+{
+    // Basic checks:
+    if (!(result->rights & FWPS_RIGHT_ACTION_WRITE) || data == NULL)
+    {
+        return;
+    }
+
+    result->actionType = FWP_ACTION_CONTINUE;
+}
+
+/*
+ * Guardicore
+ * WinDivert classify outbound mac frame ethernet callout.
+ */
+static void windivert_classify_outbound_mac_frame_ethernet_callout(
+    IN const FWPS_INCOMING_VALUES0 *fixed_vals,
+    IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
+    const FWPS_FILTER0 *filter, IN UINT64 flow_context,
+    OUT FWPS_CLASSIFY_OUT0 *result)
+{
+    // Basic checks:
+    if (!(result->rights & FWPS_RIGHT_ACTION_WRITE) || data == NULL)
+    {
+        return;
+    }
+
+    result->actionType = FWP_ACTION_CONTINUE;
 }
 
 /*

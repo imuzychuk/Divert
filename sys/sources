@@ -14,7 +14,8 @@ TARGETLIBS=\
     $(DDK_LIB_PATH)\wdmsec.lib \
     $(DDK_LIB_PATH)\ndis.lib \
     $(DDK_LIB_PATH)\fwpkclnt.lib \
-    $(SDK_LIB_PATH)\uuid.lib
+    $(SDK_LIB_PATH)\uuid.lib \
+    $(SDK_LIB_PATH)\rtlver.lib
 NTTARGETFILES=
 KMDF_VERSION_MAJOR=1
 C_DEFINES=$(C_DEFINES) -DBINARY_COMPATIBLE=0 -DNT -DUNICODE -D_UNICODE \

@@ -225,5 +225,7 @@ typedef struct windivert_ioctl_filter_s *windivert_ioctl_filter_t;
     CTL_CODE(FILE_DEVICE_NETWORK, 0x90E, METHOD_IN_DIRECT, FILE_ANY_ACCESS)
 #define IOCTL_WINDIVERT_GET_PARAM                                           \
     CTL_CODE(FILE_DEVICE_NETWORK, 0x90F, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
+#define IOCTL_WINDIVERT_START_ARP_SNIFF                                     \
+    CTL_CODE(FILE_DEVICE_NETWORK, 0x910, METHOD_OUT_DIRECT, FILE_ANY_ACCESS)
 
 #endif      /* __WINDIVERT_DEVICE_H */
