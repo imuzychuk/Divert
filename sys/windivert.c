@@ -45,7 +45,7 @@
 
 /*
  * Guardicore
- * Declare required callouts
+ * Declare required callouts and enums
  */
 #if (NTDDI_VERSION < 0x06020000)
 
@@ -66,6 +66,120 @@ DEFINE_GUID(
    0x4870,
    0xad, 0xee, 0x0a, 0xcd, 0xbd, 0xb7, 0xf4, 0xb2
 );
+
+typedef enum FWPS_FIELDS_INBOUND_MAC_FRAME_ETHERNET_
+{
+   FWPS_FIELD_INBOUND_MAC_FRAME_ETHERNET_INTERFACE_MAC_ADDRESS,
+   FWPS_FIELD_INBOUND_MAC_FRAME_ETHERNET_MAC_LOCAL_ADDRESS,
+   FWPS_FIELD_INBOUND_MAC_FRAME_ETHERNET_MAC_REMOTE_ADDRESS,
+   FWPS_FIELD_INBOUND_MAC_FRAME_ETHERNET_MAC_LOCAL_ADDRESS_TYPE,
+   FWPS_FIELD_INBOUND_MAC_FRAME_ETHERNET_MAC_REMOTE_ADDRESS_TYPE,
+   FWPS_FIELD_INBOUND_MAC_FRAME_ETHERNET_ETHER_TYPE,
+   FWPS_FIELD_INBOUND_MAC_FRAME_ETHERNET_VLAN_ID,
+   FWPS_FIELD_INBOUND_MAC_FRAME_ETHERNET_INTERFACE,
+   FWPS_FIELD_INBOUND_MAC_FRAME_ETHERNET_INTERFACE_INDEX,
+   FWPS_FIELD_INBOUND_MAC_FRAME_ETHERNET_NDIS_PORT,
+   FWPS_FIELD_INBOUND_MAC_FRAME_ETHERNET_L2_FLAGS,
+   FWPS_FIELD_INBOUND_MAC_FRAME_ETHERNET_MAX
+} FWPS_FIELDS_INBOUND_MAC_FRAME_ETHERNET;
+
+typedef enum FWPS_FIELDS_OUTBOUND_MAC_FRAME_ETHERNET_
+{
+   FWPS_FIELD_OUTBOUND_MAC_FRAME_ETHERNET_INTERFACE_MAC_ADDRESS,
+   FWPS_FIELD_OUTBOUND_MAC_FRAME_ETHERNET_MAC_LOCAL_ADDRESS,
+   FWPS_FIELD_OUTBOUND_MAC_FRAME_ETHERNET_MAC_REMOTE_ADDRESS,
+   FWPS_FIELD_OUTBOUND_MAC_FRAME_ETHERNET_MAC_LOCAL_ADDRESS_TYPE,
+   FWPS_FIELD_OUTBOUND_MAC_FRAME_ETHERNET_MAC_REMOTE_ADDRESS_TYPE,
+   FWPS_FIELD_OUTBOUND_MAC_FRAME_ETHERNET_ETHER_TYPE,
+   FWPS_FIELD_OUTBOUND_MAC_FRAME_ETHERNET_VLAN_ID,
+   FWPS_FIELD_OUTBOUND_MAC_FRAME_ETHERNET_INTERFACE,
+   FWPS_FIELD_OUTBOUND_MAC_FRAME_ETHERNET_INTERFACE_INDEX,
+   FWPS_FIELD_OUTBOUND_MAC_FRAME_ETHERNET_NDIS_PORT,
+   FWPS_FIELD_OUTBOUND_MAC_FRAME_ETHERNET_L2_FLAGS,
+   FWPS_FIELD_OUTBOUND_MAC_FRAME_ETHERNET_MAX
+} FWPS_FIELDS_OUTBOUND_MAC_FRAME_ETHERNET;
+
+#define FWPS_IS_L2_METADATA_FIELD_PRESENT(metadataValues, l2MetadataField) \
+   (((metadataValues)->currentL2MetadataValues & (l2MetadataField)) == (l2MetadataField))
+
+typedef struct WINDIVERT_L2_FWPS_INCOMING_METADATA_VALUES0_
+{
+   // Bitmask representing which values are set.
+   UINT32 currentMetadataValues;
+   // Internal flags;
+   UINT32 flags;
+   // Reserved for system use.
+   UINT64 reserved;
+   // Discard module and reason.
+   FWPS_DISCARD_METADATA0 discardMetadata;
+   // Flow Handle.
+   UINT64 flowHandle;
+   // IP Header size.
+   UINT32 ipHeaderSize;
+   // Transport Header size
+   UINT32 transportHeaderSize;
+   // Process Path.
+   FWP_BYTE_BLOB* processPath;
+   // Token used for authorization.
+   UINT64 token;
+   // Process Id.
+   UINT64 processId;
+   // Source and Destination interface indices for discard indications.
+   UINT32 sourceInterfaceIndex;
+   UINT32 destinationInterfaceIndex;
+   // Compartment Id for injection APIs.
+   ULONG compartmentId;
+   // Fragment data for inbound fragments.
+   FWPS_INBOUND_FRAGMENT_METADATA0 fragmentMetadata;
+   // Path MTU for outbound packets (to enable calculation of fragments).
+   ULONG pathMtu;
+   // Completion handle (required in order to be able to pend at this layer).
+   HANDLE completionHandle;
+   // Endpoint handle for use in outbound transport layer injection.
+   UINT64 transportEndpointHandle;
+   // Remote scope id for use in outbound transport layer injection.
+   SCOPE_ID remoteScopeId;
+   // Socket control data (and length) for use in outbound transport layer injection.
+   WSACMSGHDR* controlData;
+   ULONG controlDataLength;
+   // Direction for the current packet. Only specified for ALE re-authorization.
+   FWP_DIRECTION packetDirection;
+   // Raw IP header (and length) if the packet is sent with IP header from a RAW socket.
+   PVOID headerIncludeHeader;
+   ULONG headerIncludeHeaderLength;
+   IP_ADDRESS_PREFIX destinationPrefix;
+   UINT16 frameLength;
+   UINT64 parentEndpointHandle;
+   UINT32 icmpIdAndSequence;
+   // PID of the process that will be accepting the redirected connection
+   DWORD localRedirectTargetPID;
+   // original destination of a redirected connection
+   SOCKADDR* originalDestination;
+   HANDLE redirectRecords;
+   // Bitmask representing which L2 values are set.
+   UINT32 currentL2MetadataValues;
+   // L2 layer Flags;
+   UINT32 l2Flags;   
+   UINT32 ethernetMacHeaderSize;
+   UINT32 wiFiOperationMode;
+
+   UINT32 padding0;
+   USHORT padding1;
+   UINT32 padding2;
+
+   HANDLE vSwitchPacketContext;
+
+   PVOID subProcessTag;
+   // Reserved for system use.
+   UINT64 reserved1;
+
+} WINDIVERT_L2_FWPS_INCOMING_METADATA_VALUES0;
+
+#define FWPS_L2_METADATA_FIELD_ETHERNET_MAC_HEADER_SIZE      0x00000001
+
+#else
+
+#define WINDIVERT_L2_FWPS_INCOMING_METADATA_VALUES0 FWPS_INCOMING_METADATA_VALUES0
 
 #endif
 
@@ -154,11 +268,6 @@ typedef struct filter_s *filter_t;
 #define WINDIVERT_CONTEXT_INBOUND_IPV4_LAYER    1
 #define WINDIVERT_CONTEXT_OUTBOUND_IPV6_LAYER   2
 #define WINDIVERT_CONTEXT_INBOUND_IPV6_LAYER    3
-/*
- * Guardicore
- * Max data link layers
- */
-#define WINDIVERT_CONTEXT_MAX_DATA_LINK_LAYERS  2
 typedef enum
 {
     WINDIVERT_CONTEXT_STATE_OPENING = 0xA0,     // Context is opening.
@@ -254,6 +363,7 @@ struct packet_s
     BOOL impostor:1;                        // Is Impostor?
     BOOL loopback:1;                        // Is loopback?
     BOOL match:1;                           // Matches filter?
+    BOOL is_data_link;                      // Is L2 Data Link packet?
     UINT32 if_idx;                          // Interface index.
     UINT32 sub_if_idx;                      // Sub-interface index.
     UINT32 priority;                        // Packet priority.
@@ -404,9 +514,13 @@ static BOOL windivert_filter_test(filter_t filter, UINT16 ip, UINT8 protocol,
 
 /*
  * Guardicore
- * Data link callouts
+ * Data link
  */
 static NTSTATUS windivert_install_data_link_callouts(context_t context);
+static void windivert_classify_data_link_callout(context_t context, IN UINT8 direction,
+    IN UINT32 if_idx, IN UINT16 etherType, IN UINT32 advance,
+    IN OUT void *data, IN UINT64 flow_context,
+    OUT FWPS_CLASSIFY_OUT0 *result);
 static void windivert_classify_inbound_mac_frame_ethernet_callout(
     IN const FWPS_INCOMING_VALUES0 *fixed_vals,
     IN const FWPS_INCOMING_METADATA_VALUES0 *meta_vals, IN OUT void *data,
@@ -1605,33 +1719,36 @@ static void windivert_read_service_request(packet_t packet, WDFREQUEST request)
         addr->Direction = packet->direction;
         addr->Loopback = (packet->loopback? 1: 0);
         addr->Impostor = (packet->impostor? 1: 0);
-        if (packet->loopback)
+        if (!packet->is_data_link)
         {
-            addr->PseudoIPChecksum = addr->PseudoTCPChecksum =
-                addr->PseudoUDPChecksum = 1;
-        }
-        else if (packet->forward)
-        {
-            addr->PseudoIPChecksum = addr->PseudoTCPChecksum =
-                addr->PseudoUDPChecksum = 0;
-        }
-        else if (packet->direction == WINDIVERT_DIRECTION_OUTBOUND)
-        {
-            addr->PseudoIPChecksum =
-                (UINT8)packet->checksums.Transmit.IpHeaderChecksum;
-            addr->PseudoTCPChecksum =
-                (UINT8)packet->checksums.Transmit.TcpChecksum;
-            addr->PseudoUDPChecksum =
-                (UINT8)packet->checksums.Transmit.UdpChecksum;
-        }
-        else
-        {
-            addr->PseudoIPChecksum =
-                (UINT8)packet->checksums.Receive.IpChecksumSucceeded;
-            addr->PseudoTCPChecksum =
-                (UINT8)packet->checksums.Receive.TcpChecksumSucceeded;
-            addr->PseudoUDPChecksum =
-                (UINT8)packet->checksums.Receive.UdpChecksumSucceeded;
+            if (packet->loopback)
+            {
+                addr->PseudoIPChecksum = addr->PseudoTCPChecksum =
+                    addr->PseudoUDPChecksum = 1;
+            }
+            else if (packet->forward)
+            {
+                addr->PseudoIPChecksum = addr->PseudoTCPChecksum =
+                    addr->PseudoUDPChecksum = 0;
+            }
+            else if (packet->direction == WINDIVERT_DIRECTION_OUTBOUND)
+            {
+                addr->PseudoIPChecksum =
+                    (UINT8)packet->checksums.Transmit.IpHeaderChecksum;
+                addr->PseudoTCPChecksum =
+                    (UINT8)packet->checksums.Transmit.TcpChecksum;
+                addr->PseudoUDPChecksum =
+                    (UINT8)packet->checksums.Transmit.UdpChecksum;
+            }
+            else
+            {
+                addr->PseudoIPChecksum =
+                    (UINT8)packet->checksums.Receive.IpChecksumSucceeded;
+                addr->PseudoTCPChecksum =
+                    (UINT8)packet->checksums.Receive.TcpChecksumSucceeded;
+                addr->PseudoUDPChecksum =
+                    (UINT8)packet->checksums.Receive.UdpChecksumSucceeded;
+            }
         }
         addr->Reserved = 0;
     }
@@ -2524,13 +2641,26 @@ static void windivert_classify_inbound_mac_frame_ethernet_callout(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    // Basic checks:
-    if (!(result->rights & FWPS_RIGHT_ACTION_WRITE) || data == NULL)
+    const WINDIVERT_L2_FWPS_INCOMING_METADATA_VALUES0 *data_link_meta_vals;
+    UINT32 advance = 0;
+
+    // This callout will be used only on Win8 and upper, it is safe to do such cast
+    data_link_meta_vals = (const WINDIVERT_L2_FWPS_INCOMING_METADATA_VALUES0 *)meta_vals;
+
+    if (FWPS_IS_L2_METADATA_FIELD_PRESENT(data_link_meta_vals,
+        FWPS_L2_METADATA_FIELD_ETHERNET_MAC_HEADER_SIZE))
     {
-        return;
+          advance = data_link_meta_vals->ethernetMacHeaderSize;
     }
 
-    result->actionType = FWP_ACTION_CONTINUE;
+    windivert_classify_data_link_callout((context_t)filter->context,
+        WINDIVERT_DIRECTION_INBOUND,
+        fixed_vals->incomingValue[
+            FWPS_FIELD_INBOUND_MAC_FRAME_ETHERNET_INTERFACE_INDEX].value.uint32,
+        fixed_vals->incomingValue[
+            FWPS_FIELD_INBOUND_MAC_FRAME_ETHERNET_ETHER_TYPE].value.uint16,
+        advance,
+        data, flow_context, result);
 }
 
 /*
@@ -2543,13 +2673,14 @@ static void windivert_classify_outbound_mac_frame_ethernet_callout(
     const FWPS_FILTER0 *filter, IN UINT64 flow_context,
     OUT FWPS_CLASSIFY_OUT0 *result)
 {
-    // Basic checks:
-    if (!(result->rights & FWPS_RIGHT_ACTION_WRITE) || data == NULL)
-    {
-        return;
-    }
-
-    result->actionType = FWP_ACTION_CONTINUE;
+    windivert_classify_data_link_callout((context_t)filter->context,
+        WINDIVERT_DIRECTION_OUTBOUND,
+        fixed_vals->incomingValue[
+            FWPS_FIELD_OUTBOUND_MAC_FRAME_ETHERNET_INTERFACE_INDEX].value.uint32,
+        fixed_vals->incomingValue[
+            FWPS_FIELD_OUTBOUND_MAC_FRAME_ETHERNET_ETHER_TYPE].value.uint16,
+        0,
+        data, flow_context, result);
 }
 
 /*
@@ -2754,6 +2885,92 @@ windivert_classify_callout_exit:
 }
 
 /*
+ * Guardicore
+ * WinDivert classify data link callout.
+ */
+static void windivert_classify_data_link_callout(context_t context, IN UINT8 direction,
+    IN UINT32 if_idx, IN UINT16 etherType, IN UINT32 advance,
+    IN OUT void *data, IN UINT64 flow_context,
+    OUT FWPS_CLASSIFY_OUT0 *result)
+{
+    KLOCK_QUEUE_HANDLE lock_handle;
+    PNET_BUFFER_LIST buffers;
+    PNET_BUFFER buffer_fst;
+    WDFOBJECT object;
+    LONGLONG timestamp;
+    UINT32 priority;
+    BOOL ok;
+    NTSTATUS status;
+
+    // Basic checks:
+    if (!(result->rights & FWPS_RIGHT_ACTION_WRITE) || data == NULL)
+    {
+        return;
+    }
+
+    // We just copy the packet and allow it to go forward
+    result->actionType = FWP_ACTION_CONTINUE;
+
+    // Sniff only ARP packets
+    if (etherType != 0x0806)
+    {
+        return;
+    }
+
+    buffers = (PNET_BUFFER_LIST)data;
+
+    KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+    if (context->state != WINDIVERT_CONTEXT_STATE_OPEN || !context->arp_sniff_only)
+    {
+        KeReleaseInStackQueuedSpinLock(&lock_handle);
+        return;
+    }
+    priority = context->priority;
+    object = (WDFOBJECT)context->object;
+    WdfObjectReference(object);
+    KeReleaseInStackQueuedSpinLock(&lock_handle);
+
+    // Get the timestamp.
+    timestamp = KeQueryPerformanceCounter(NULL).QuadPart;
+
+    // Retreat the NET_BUFFER to the IP header, if necessary.
+    // If (advance != 0) then this must be in the inbound path, and the
+    // NET_BUFFER_LIST must contain exactly one NET_BUFFER.
+    if (advance != 0)
+    {
+        status = NdisRetreatNetBufferDataStart(NET_BUFFER_LIST_FIRST_NB(buffers), advance, 0, NULL);
+        if (!NT_SUCCESS(status))
+        {
+            WdfObjectDereference(object);
+            return;
+        }
+    }
+
+    buffer_fst = NET_BUFFER_LIST_FIRST_NB(buffers);
+    do
+    {
+        ok = windivert_queue_work(context, TRUE, FALSE, buffers,
+            buffer_fst, direction, if_idx, 0, FALSE, FALSE,
+            FALSE, FALSE, TRUE, priority, timestamp);
+        if (!ok)
+        {
+            goto windivert_classify_data_link_callout_exit;
+        }
+        buffer_fst = NET_BUFFER_NEXT_NB(buffer_fst);
+    }
+    while (buffer_fst != NULL);
+
+windivert_classify_data_link_callout_exit:
+    if (advance != 0)
+    {
+        // Advance the NET_BUFFER to its original position
+        NdisAdvanceNetBufferDataStart(NET_BUFFER_LIST_FIRST_NB(buffers), advance, FALSE, NULL);
+    }
+
+    WdfObjectDereference(object);
+}
+
+/*
  * WinDivert work item routine for out-of-band filtering.
  */
 VOID windivert_worker(IN WDFWORKITEM item)
@@ -2763,8 +2980,10 @@ VOID windivert_worker(IN WDFWORKITEM item)
     context_t context = windivert_context_get(object);
     PLIST_ENTRY entry;
     packet_t work;
+    BOOL arp_sniff_only;
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
+    arp_sniff_only = context->arp_sniff_only;
     while (context->state == WINDIVERT_CONTEXT_STATE_OPEN &&
             !IsListEmpty(&context->work_queue))
     {
@@ -2773,13 +2992,21 @@ VOID windivert_worker(IN WDFWORKITEM item)
         KeReleaseInStackQueuedSpinLock(&lock_handle);
 
         work = CONTAINING_RECORD(entry, struct packet_s, entry);
-        if (work->match)
+        if (arp_sniff_only)
         {
+            DEBUG("GC: Captured ARP packet (context=%p)", context);
             windivert_queue_packet(context, work);
         }
         else
         {
-            windivert_reinject_packet(work);
+            if (work->match)
+            {
+                windivert_queue_packet(context, work);
+            }
+            else
+            {
+                windivert_reinject_packet(work);
+            }
         }
 
         KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
@@ -2838,13 +3065,12 @@ static BOOL windivert_queue_work(context_t context, BOOL sniff_mode,
     work->impostor = impostor;
     work->loopback = loopback;
     work->match = match;
+    work->is_data_link = FALSE;
     work->direction = direction;
     work->if_idx = if_idx;
     work->sub_if_idx = sub_if_idx;
     work->priority = priority;
     work->timestamp = timestamp;
-    work->checksums.Value = NET_BUFFER_LIST_INFO(buffers,
-        TcpIpChecksumNetBufferListInfo);
     old_entry = NULL;
 
     KeAcquireInStackQueuedSpinLock(&context->lock, &lock_handle);
@@ -2854,6 +3080,17 @@ static BOOL windivert_queue_work(context_t context, BOOL sniff_mode,
         windivert_free_packet(work);
         return FALSE;
     }
+
+    if (!context->arp_sniff_only)
+    {
+        work->checksums.Value = NET_BUFFER_LIST_INFO(buffers,
+            TcpIpChecksumNetBufferListInfo);
+    }
+    else
+    {
+        work->is_data_link = TRUE;
+    }
+
     context->work_queue_length++;
     if (context->work_queue_length > WINDIVERT_WORK_QUEUE_LEN_MAX)
     {
