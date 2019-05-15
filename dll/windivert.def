@@ -15,3 +15,5 @@ EXPORTS
     WinDivertHelperParseIPv6Address
     WinDivertHelperCheckFilter
     WinDivertHelperEvalFilter
+    WinDivertARPSniffOpen
+    WinDivertARPSniffClose

@@ -193,6 +193,23 @@ extern WINDIVERTEXPORT BOOL WinDivertGetParam(
     __in        WINDIVERT_PARAM param,
     __out       UINT64 *pValue);
 
+
+/****************************************************************************/
+/* WINDIVERT ARP SNIFFER API                                                */
+/****************************************************************************/
+
+/*
+ * Open a WinDivert ARP sniffer handle.
+ */
+extern WINDIVERTEXPORT HANDLE WinDivertARPSniffOpen(
+    __in        INT16 priority);
+
+/*
+ * Close a WinDivert handle.
+ */
+extern WINDIVERTEXPORT BOOL WinDivertARPSniffClose(
+    __in        HANDLE handle);
+
 #endif      /* WINDIVERT_KERNEL */
 
 /****************************************************************************/
