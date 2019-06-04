@@ -139,6 +139,40 @@ static DWORD windivert_tls_idx;
 static HMODULE module = NULL;
 
 /*
+ * Debug logging output
+ */
+static VOID _WinDivertDbgLog(const char *msg)
+{
+    static HANDLE hfile = INVALID_HANDLE_VALUE;
+
+    if (INVALID_HANDLE_VALUE == hfile)
+    {
+        hfile = CreateFile(L"C:\\ProgramData\\Guardicore\\logs\\windivert-internal-dll.log",
+                          FILE_APPEND_DATA,
+                          FILE_SHARE_READ,
+                          NULL,
+                          OPEN_ALWAYS,
+                          FILE_ATTRIBUTE_NORMAL,
+                          NULL);
+        if (INVALID_HANDLE_VALUE == hfile)
+        {
+            return;
+        }
+    }
+
+    size_t len;
+    for (len = 0; msg[len] != 0; len++);
+
+    WriteFile(hfile, msg, len, NULL, NULL);
+    WriteFile(hfile, "\n", 1, NULL, NULL);
+    FlushFileBuffers(hfile);
+
+    SetLastError(0);
+}
+
+#define GC_WINDIVERT_LOG _WinDivertDbgLog
+
+/*
  * Dll Entry
  */
 extern BOOL APIENTRY WinDivertDllEntry(HANDLE module0, DWORD reason,
@@ -261,10 +295,12 @@ static SC_HANDLE WinDivertDriverInstall(VOID)
     wchar_t windivert_sys[MAX_PATH+1];
     SERVICE_STATUS status;
 
+    GC_WINDIVERT_LOG("[WinDivertDriverInstall] Enter");
     // Open the service manager:
     manager = OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS);
     if (manager == NULL)
     {
+        GC_WINDIVERT_LOG("[WinDivertDriverInstall] OpenSCManager(NULL, NULL, SC_MANAGER_ALL_ACCESS) - failed");
         goto WinDivertDriverInstallExit;
     }
 
@@ -273,12 +309,16 @@ WinDivertDriverInstallReTry:
     service = OpenService(manager, WINDIVERT_DEVICE_NAME, SERVICE_ALL_ACCESS);
     if (service != NULL)
     {
+        GC_WINDIVERT_LOG("[WinDivertDriverInstall] OpenService(manager, WINDIVERT_DEVICE_NAME, SERVICE_ALL_ACCESS) - failed");
         goto WinDivertDriverInstallExit;
     }
+
+    GC_WINDIVERT_LOG("[WinDivertDriverInstall] OpenService - done");
 
     // Get driver file:
     if (!WinDivertGetDriverFileName(windivert_sys))
     {
+        GC_WINDIVERT_LOG("[WinDivertDriverInstall] WinDivertGetDriverFileName - failed");
         goto WinDivertDriverInstallExit;
     }
 
@@ -289,16 +329,19 @@ WinDivertDriverInstallReTry:
         NULL, NULL, NULL);
     if (service == NULL)
     {
+        GC_WINDIVERT_LOG("[WinDivertDriverInstall] CreateService - failed");
         if (GetLastError() == ERROR_SERVICE_EXISTS) 
         {
             if (retries != 0)
             {
                 retries--;
+                GC_WINDIVERT_LOG("[WinDivertDriverInstall] WinDivertDriverInstallReTry");
                 goto WinDivertDriverInstallReTry;
             }
         }
         goto WinDivertDriverInstallExit;
     }
+    GC_WINDIVERT_LOG("[WinDivertDriverInstall] CreateService - done");
 
 WinDivertDriverInstallExit:
 
@@ -314,6 +357,7 @@ WinDivertDriverInstallExit:
             }
             else
             {
+                GC_WINDIVERT_LOG("[WinDivertDriverInstall] StartService - failed");
                 // Failed to start service; clean-up:
                 ControlService(service, SERVICE_CONTROL_STOP, &status);
                 DeleteService(service);
@@ -322,6 +366,7 @@ WinDivertDriverInstallExit:
                 SetLastError(err);
             }
         }
+        GC_WINDIVERT_LOG("[WinDivertDriverInstall] StartService - done");
     }
 
     err = GetLastError();
@@ -330,7 +375,8 @@ WinDivertDriverInstallExit:
         CloseServiceHandle(manager);
     }
     SetLastError(err);
-    
+
+    GC_WINDIVERT_LOG("[WinDivertDriverInstall] Exit");
     return service;
 }
 
@@ -410,9 +456,13 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     SC_HANDLE service;
     UINT32 priority32;
 
+    GC_WINDIVERT_LOG("[WinDivertOpen] Enter");
+    GC_WINDIVERT_LOG(filter);
+
     // Parameter checking.
     if (!WINDIVERT_FLAGS_VALID(flags) || layer > WINDIVERT_LAYER_MAX)
     {
+        GC_WINDIVERT_LOG("[WinDivertOpen] Bad parameters - flags ");
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
     }
@@ -420,6 +470,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     if (priority32 < WINDIVERT_PRIORITY_MIN ||
         priority32 > WINDIVERT_PRIORITY_MAX)
     {
+        GC_WINDIVERT_LOG("[WinDivertOpen] Bad paramters - priority");
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
     }
@@ -428,6 +479,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     comp_err = WinDivertCompileFilter(filter, layer, object, &obj_len);
     if (IS_ERROR(comp_err))
     {
+        GC_WINDIVERT_LOG("[WinDivertOpen] Bad paramters - filter");
         SetLastError(ERROR_INVALID_PARAMETER);
         return INVALID_HANDLE_VALUE;
     }
@@ -442,17 +494,21 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
         FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OVERLAPPED, INVALID_HANDLE_VALUE);
     if (handle == INVALID_HANDLE_VALUE)
     {
+        GC_WINDIVERT_LOG("[WinDivertOpen] Could not open WINDIVERT_DEVICE_NAME");
         err = GetLastError();
         if (err != ERROR_FILE_NOT_FOUND && err != ERROR_PATH_NOT_FOUND)
         {
+            GC_WINDIVERT_LOG("[WinDivertOpen] Failed");
             return INVALID_HANDLE_VALUE;
         }
 
+        GC_WINDIVERT_LOG("[WinDivertOpen] Error is ERROR_FILE_NOT_FOUND or WINDIVERT_DEVICE_NAME, installing driver...");
         // Open failed because the device isn't installed; install it now.
         SetLastError(0);
         service = WinDivertDriverInstall();
         if (service == NULL)
         {
+            GC_WINDIVERT_LOG("[WinDivertOpen] WinDivertDriverInstall - failed");
             if (GetLastError() == 0)
             {
                 SetLastError(ERROR_OPEN_FAILED);
@@ -470,6 +526,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
 
         if (handle == INVALID_HANDLE_VALUE)
         {
+            GC_WINDIVERT_LOG("[WinDivertOpen] Could not open WINDIVERT_DEVICE_NAME - again");
             return INVALID_HANDLE_VALUE;
         }
     }
@@ -480,6 +537,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
         if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_LAYER, 0,
                 (UINT64)layer, NULL, 0, NULL))
         {
+            GC_WINDIVERT_LOG("[WinDivertOpen] WinDivertIoControl layer - failed");
             CloseHandle(handle);
             return INVALID_HANDLE_VALUE;
         }
@@ -491,6 +549,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
         if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_FLAGS, 0,
                 (UINT64)flags, NULL, 0, NULL))
         {
+            GC_WINDIVERT_LOG("[WinDivertOpen] WinDivertIoControl flags - failed");
             CloseHandle(handle);
             return INVALID_HANDLE_VALUE;
         }
@@ -502,6 +561,7 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
         if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_SET_PRIORITY, 0,
                 (UINT64)priority32, NULL, 0, NULL))
         {
+            GC_WINDIVERT_LOG("[WinDivertOpen] WinDivertIoControl prio - failed");
             CloseHandle(handle);
             return INVALID_HANDLE_VALUE;
         }
@@ -511,10 +571,12 @@ extern HANDLE WinDivertOpen(const char *filter, WINDIVERT_LAYER layer,
     if (!WinDivertIoControl(handle, IOCTL_WINDIVERT_START_FILTER, 0, 0,
             object, obj_len*sizeof(struct windivert_ioctl_filter_s), NULL))
     {
+        GC_WINDIVERT_LOG("[WinDivertOpen] WinDivertIoControl start filter - failed");
         CloseHandle(handle);
         return INVALID_HANDLE_VALUE;
     }
 
+    GC_WINDIVERT_LOG("[WinDivertOpen] Success");
     // Success!
     return handle;
 }
