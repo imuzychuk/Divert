@@ -145,6 +145,8 @@ static VOID _WinDivertDbgLog(const char *msg)
 {
     static HANDLE hfile = INVALID_HANDLE_VALUE;
 
+    DWORD err = GetLastError();
+
     if (INVALID_HANDLE_VALUE == hfile)
     {
         hfile = CreateFile(L"C:\\ProgramData\\Guardicore\\logs\\windivert-internal-dll.log",
@@ -167,7 +169,7 @@ static VOID _WinDivertDbgLog(const char *msg)
     WriteFile(hfile, "\n", 1, NULL, NULL);
     FlushFileBuffers(hfile);
 
-    SetLastError(0);
+    SetLastError(err);
 }
 
 #define GC_WINDIVERT_LOG _WinDivertDbgLog
@@ -294,6 +296,8 @@ static SC_HANDLE WinDivertDriverInstall(VOID)
     SC_HANDLE manager = NULL, service = NULL;
     wchar_t windivert_sys[MAX_PATH+1];
     SERVICE_STATUS status;
+    char utf8_windivert_sys[(MAX_PATH+1) * 2] = { 0 };
+    size_t ws_len = 0;
 
     GC_WINDIVERT_LOG("[WinDivertDriverInstall] Enter");
     // Open the service manager:
@@ -321,6 +325,9 @@ WinDivertDriverInstallReTry:
         GC_WINDIVERT_LOG("[WinDivertDriverInstall] WinDivertGetDriverFileName - failed");
         goto WinDivertDriverInstallExit;
     }
+    WinDivertStrLen(windivert_sys, MAX_PATH + 1, &ws_len);
+    WideCharToMultiByte(CP_UTF8, 0, windivert_sys, ws_len, utf8_windivert_sys, (MAX_PATH+1) * 2, NULL, NULL);
+    GC_WINDIVERT_LOG(utf8_windivert_sys);
 
     // Create the service:
     service = CreateService(manager, WINDIVERT_DEVICE_NAME,
