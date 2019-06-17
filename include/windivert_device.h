@@ -45,7 +45,7 @@
 #include "windivert.h"
 
 #define WINDIVERT_VERSION                           1
-#define WINDIVERT_VERSION_MINOR                     4
+#define WINDIVERT_VERSION_MINOR                     5
 
 #define WINDIVERT_STR2(s)                           #s
 #define WINDIVERT_STR(s)                            WINDIVERT_STR2(s)
@@ -57,7 +57,7 @@
         WINDIVERT_LSTR(WINDIVERT_VERSION_MINOR)
 
 #define WINDIVERT_DEVICE_NAME                                               \
-    L"WinDivert" WINDIVERT_VERSION_LSTR
+    L"gc-deception-" WINDIVERT_VERSION_LSTR
 
 #define WINDIVERT_IOCTL_VERSION                     6
 #define WINDIVERT_IOCTL_MAGIC                       0xA2BF
