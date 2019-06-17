@@ -97,8 +97,8 @@ do
         $CC -s -O2 -Iinclude/ examples/streamdump/streamdump.c \
             -o "install/MINGW/$CPU/streamdump.exe" -lWinDivert -lws2_32 \
             -L"install/MINGW/$CPU/"
-        echo "\tcopy install/MINGW/$CPU/WinDivert$BITS.sys..."
-        cp install/WDDK/$CPU/WinDivert$BITS.sys install/MINGW/$CPU
+        echo "\tcopy install/MINGW/$CPU/gc-deception-driver$BITS.sys..."
+        cp install/WDDK/$CPU/gc-deception-driver$BITS.sys install/MINGW/$CPU
     else
         echo "WARNING: $CC not found"
     fi
